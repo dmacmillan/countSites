@@ -4,6 +4,7 @@ import cPickle as pickle
 from copy import deepcopy
 #from pybedtools import *
 import pysam
+import numpy as np
 
 def kleat_int(thing):
     try:
@@ -518,6 +519,8 @@ def genResults(annot, kleats, cls):
             else:
                 annot[chrom][gene] = annot[chrom][gene][-2:]
             for region in annot[chrom][gene]:
+#                if region.end - region.start > 4000:
+#                    print '{}:{}-{}'.format(chrom, region.start, region.end)
                 last = region.start
                 intervals = []
                 splices = 0
@@ -540,12 +543,16 @@ def genResults(annot, kleats, cls):
                         coords[i+1] = coords[i]
                         continue
                     my_regions.append([start,stop])
+                if not my_regions:
+                    continue
                 temp = []
                 count = len(my_regions) - 1
+                if count == -1:
+                    print coords
                 if count not in counts:
-                    counts[count] = 1
+                    counts[count] = [region.end-region.start]
                 else:
-                    counts[count] += 1
+                    counts[count].append(region.end-region.start)
     return counts
 
 def calcMedian(lst):
@@ -587,9 +594,11 @@ if __name__ == '__main__':
     parser.add_argument('-cw', '--cluster_window', type=int, default=20, help='Set the window size for clustering KLEAT cleavage sites. Default = 20')
     parser.add_argument('-o', '--outdir', default=os.getcwd(), help='Directory to output to. Default is current directory')
     parser.add_argument('-r', '--reference', default='/home/dmacmillan/references/hg19/hg19.fa', help='Path to the reference genome from which to fetch sequences')
-    parser.add_argument('-l', '--load', action='store_true', help='Enable to load previous results rather than generate them from scratch.')
     
     args = parser.parse_args()
+
+    if not os.path.isdir(args.outdir):
+        os.makedirs(args.outdir)
 
     ref = pysam.FastaFile(args.reference)
 
@@ -639,67 +648,23 @@ if __name__ == '__main__':
     results = {}
 
     saved = os.path.join(args.outdir, 'results.dump')
-    print genResults(annot,kleats,cls)
-    sys.exit()
+    #print genResults(annot,kleats,cls)
+    res = genResults(annot,kleats,cls)
+    
+    outfile_path = os.path.join(args.outdir,'results')
 
-    if not args.load:
-        sprint('Computing results ...')
-        results, fasta, regions, stats = genResults(annot,kleats,cls)
-        print 'DONE'
-        path = writeFile(args.outdir, 'regions.bed', regions)
-        print 'regions.bed -> {}'.format(path)
-        path = writeFile(args.outdir, 'regions.fa', fasta)
-        print 'regions.fa -> {}'.format(path)
-        path = writeFile(args.outdir, 'stats', ('\n').join(stats))
-        print 'stats -> {}'.format(path)
-        pickle.dump(results, open(saved, 'wb'))
-    else:
-        results = pickle.load(open(saved, 'rb'))
+    outfile = open(outfile_path, 'w')
 
-    for a in aligns:
-        writeFile(args.outdir, a+'.bg', *aligns[a]['bg'])
+    outfile.write(('\t').join(['CLEAVAGE_SITES','MIN','Q1','MED','Q3','MAX','LENGTH','SUM','MEAN','SEM']) + '\n')
 
-    #ratios = computeRatios(results, annot)
-    ratios = computeRatios2(results, annot)
-
-    ratios_path = os.path.join(args.outdir, 'ratios.dump')
-
-    if not args.load:
-        pickle.dump(ratios, open(ratios_path, 'wb'))
-    else:
-        try:
-            ratios = pickle.load(open(ratios_path, 'rb'))
-        except IOError:
-            ratios = computeRatios2(results, annot)
-
-    ratios_human_path = os.path.join(args.outdir, 'ratios')
-
-    diffs = interpretRatios(ratios)
-
-    to_write = []
-
-    try:
-        avg_stdev = sstdev([x['avg_diff'] for x in diffs])
-        med_stdev = sstdev([x['med_diff'] for x in diffs])
-    except ValueError:
-        avg_stdev = None
-        med_stdev = None
-    for i in diffs:
-        reg = i['chrom'] + ':' + i['region']
-        if i['avg_diff'] >= avg_stdev or not avg_stdev:
-            to_write.append('AVG\t{}\t{}\t{}\t{}'.format(reg,i['gene'],i['sample_i'],i['sample_j']))
-        if i['med_diff'] >= med_stdev or not med_stdev:
-            to_write.append('MED\t{}\t{}\t{}\t{}'.format(reg,i['gene'],i['sample_i'],i['sample_j']))
-
-    writeFile(args.outdir, 'significant.knot', *to_write)
-#    with open(ratios_human_path, 'w') as f:
-#        f.write('CHROM\tGENE\tSTRAND\tSAMPLE\tMEDIANS\tAVERAGES\n')
-#        for c in results:
-#            for g in results[c]:
-#                if g not in ratios:
-#                    continue
-#                for a in ratios[g]:
-#                    try:
-#                        f.write('{}\t{}\t{}\t{}\t{}\t{}\n'.format(c,g,annot[c][g][0].strand,a,(',').join([str(x) for x in ratios[g][a]['med']]),(',').join([str(x) for x in ratios[g][a]['avg']])))
-#                    except KeyError:
-#                        print c, g
+    for count in res:
+        length = len(res[count])
+        mymin = min(res[count])
+        q1 = np.percentile(res[count],25)
+        mymedian = np.percentile(res[count],50)
+        q3 = np.percentile(res[count],75)
+        mymax = max(res[count])
+        mysum = sum(res[count])
+        mymean = mysum/length
+        sem = np.std(res[count])/math.sqrt(length)
+        outfile.write(('\t').join([str(x) for x in [count, mymin, q1, mymedian, q3, mymax, length, mysum, mymean, sem]]) + '\n')
