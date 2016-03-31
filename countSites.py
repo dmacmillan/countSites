@@ -489,7 +489,7 @@ def analyzeRatios(ratios):
 #                total = sum(dists)
 
 def genResults(annot, kleats, cls):
-    counts = {}
+    counts = {'single': [], 'multi': []}
     results = {}
     fasta = regions = ''
     data = [('\t').join(['GENE','STRAND','SAMPLE','REGION','LENGTH','MIN','Q1','MED','Q3','MAX','MEAN','SE'])]
@@ -546,13 +546,11 @@ def genResults(annot, kleats, cls):
                 if not my_regions:
                     continue
                 temp = []
-                count = len(my_regions) - 1
-                if count == -1:
-                    print coords
-                if count not in counts:
-                    counts[count] = [region.end-region.start]
-                else:
-                    counts[count].append(region.end-region.start)
+                count = len(my_regions)
+                if count == 1:
+                    counts['single'].append(region.end-region.start)
+                elif count > 1:
+                    counts['multi'].append(region.end-region.start)
     return counts
 
 def calcMedian(lst):
@@ -658,13 +656,14 @@ if __name__ == '__main__':
     outfile.write(('\t').join(['CLEAVAGE_SITES','MIN','Q1','MED','Q3','MAX','LENGTH','SUM','MEAN','SEM']) + '\n')
 
     for count in res:
-        length = len(res[count])
-        mymin = min(res[count])
-        q1 = np.percentile(res[count],25)
-        mymedian = np.percentile(res[count],50)
-        q3 = np.percentile(res[count],75)
-        mymax = max(res[count])
-        mysum = sum(res[count])
-        mymean = mysum/length
-        sem = np.std(res[count])/math.sqrt(length)
-        outfile.write(('\t').join([str(x) for x in [count, mymin, q1, mymedian, q3, mymax, length, mysum, mymean, sem]]) + '\n')
+        outfile.write('{}\t{}\n'.format(count, (',').join([str(x) for x in res[count]])))
+#        length = len(res[count])
+#        mymin = min(res[count])
+#        q1 = np.percentile(res[count],25)
+#        mymedian = np.percentile(res[count],50)
+#        q3 = np.percentile(res[count],75)
+#        mymax = max(res[count])
+#        mysum = sum(res[count])
+#        mymean = mysum/length
+#        sem = np.std(res[count])/math.sqrt(length)
+#        outfile.write(('\t').join([str(x) for x in [count, mymin, q1, mymedian, q3, mymax, length, mysum, mymean, sem]]) + '\n')
